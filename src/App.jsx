@@ -149,9 +149,7 @@ export default function App() {
 
         <section className="log-section">
           {goals.length === 0 ? (
-            <div className="empty-log">
-              Noch keine Tore erfasst. Trage eine Rückennummer ein und buche ein Tor.
-            </div>
+            <div className="empty-log">noch keine Tore gefallen</div>
           ) : (
             <div className="goal-grid">
               {pairedGoals.map((row, index) => (
