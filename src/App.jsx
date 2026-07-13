@@ -36,6 +36,36 @@ export default function App() {
 
   const clock = useMemo(() => formatClock(elapsedSeconds), [elapsedSeconds]);
 
+  const homeScorersCount = useMemo(
+    () => new Set(goals.filter((goal) => goal.team === "home").map((goal) => goal.player)).size,
+    [goals]
+  );
+
+  const awayScorersCount = useMemo(
+    () => new Set(goals.filter((goal) => goal.team === "away").map((goal) => goal.player)).size,
+    [goals]
+  );
+
+  const homeDisplayScore = homeScore * homeScorersCount;
+  const awayDisplayScore = awayScore * awayScorersCount;
+
+  const homeGoals = useMemo(
+    () => goals.filter((goal) => goal.team === "home"),
+    [goals]
+  );
+  const awayGoals = useMemo(
+    () => goals.filter((goal) => goal.team === "away"),
+    [goals]
+  );
+
+  const pairedGoals = useMemo(() => {
+    const maxLength = Math.max(homeGoals.length, awayGoals.length);
+    return Array.from({ length: maxLength }, (_, index) => ({
+      home: homeGoals[index] ?? null,
+      away: awayGoals[index] ?? null,
+    }));
+  }, [homeGoals, awayGoals]);
+
   const addGoal = (team) => {
     const trimmed = playerNumber.trim();
 
@@ -100,15 +130,50 @@ export default function App() {
         <section className="score-section">
           <div className="team-card">
             <p className="team-label">Heim</p>
-            <p className="team-score">{homeScore}</p>
+            <p className="team-score-label">Spielstand</p>
+            <p className="team-score">{homeDisplayScore}</p>
+            <p className="team-score-actual-label">Tore</p>
+            <p className="team-score-actual">{homeScore}</p>
           </div>
 
           <div className="score-separator">:</div>
 
           <div className="team-card">
             <p className="team-label">Gast</p>
-            <p className="team-score">{awayScore}</p>
+            <p className="team-score-label">Spielstand</p>
+            <p className="team-score">{awayDisplayScore}</p>
+            <p className="team-score-actual-label">Tore</p>
+            <p className="team-score-actual">{awayScore}</p>
           </div>
+        </section>
+
+        <section className="log-section">
+          {goals.length === 0 ? (
+            <div className="empty-log">
+              Noch keine Tore erfasst. Trage eine Rückennummer ein und buche ein Tor.
+            </div>
+          ) : (
+            <div className="goal-grid">
+              {pairedGoals.map((row, index) => (
+                <div key={`${row.home?.id ?? "h"}-${row.away?.id ?? "a"}-${index}`} className="goal-row">
+                  <div className="goal-cell goal-cell-home">
+                    {row.home ? (
+                      <span className="goal-text">
+                        Spieler {row.home.player.padStart(2, "0")} trifft in {row.home.time}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="goal-cell goal-cell-away">
+                    {row.away ? (
+                      <span className="goal-text">
+                        Spieler {row.away.player.padStart(2, "0")} trifft in {row.away.time}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="controls">
@@ -143,7 +208,7 @@ export default function App() {
 
           <div className="clock-controls">
             <button
-              className="btn btn-ghost"
+              className={`btn ${isRunning ? "btn-ghost" : "btn-start"}`}
               onClick={() => setIsRunning((prev) => !prev)}
             >
               {isRunning ? "Pause" : "Start"}
@@ -155,33 +220,6 @@ export default function App() {
               Spiel Reset
             </button>
           </div>
-        </section>
-
-        <section className="log-section">
-          <div className="log-header">
-            <h2>Letzte Tore</h2>
-            <span>{goals.length} Einträge</span>
-          </div>
-
-          {goals.length === 0 ? (
-            <div className="empty-log">
-              Noch keine Tore erfasst. Trage eine Rückennummer ein und buche ein Tor.
-            </div>
-          ) : (
-            <ul className="goal-list">
-              {goals.map((goal) => (
-                <li key={goal.id} className="goal-item">
-                  <span className={`pill ${goal.team === "home" ? "home" : "away"}`}>
-                    {goal.team === "home" ? "Heim" : "Gast"}
-                  </span>
-                  <span className="goal-text">
-                    # {goal.player} trifft in {goal.minute}
-                  </span>
-                  <span className="goal-time">{goal.time}</span>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
       </main>
     </div>

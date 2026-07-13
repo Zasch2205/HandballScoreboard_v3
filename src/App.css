@@ -110,10 +110,10 @@ body {
 
 .team-label {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.83rem;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: #9eb2d9;
+  color: #ffffff;
 }
 
 .team-score {
@@ -121,6 +121,29 @@ body {
   font-size: clamp(2.2rem, 1.3rem + 5vw, 4.4rem);
   font-weight: 800;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #facc15;
+}
+
+.team-score-label,
+.team-score-actual-label {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #facc15;
+}
+
+.team-score-actual-label {
+  color: #ef4444;
+}
+
+.team-score-actual {
+  margin: 6px 0 0;
+  font-size: clamp(0.85rem, 0.72rem + 0.7vw, 1.05rem);
+  font-weight: 600;
+  color: #ef4444;
   font-variant-numeric: tabular-nums;
 }
 
@@ -207,6 +230,15 @@ body {
   background: linear-gradient(180deg, #e54860, #bf2f46);
 }
 
+.btn-start {
+  background: linear-gradient(180deg, #22c55e, #16a34a);
+}
+
+.btn-start:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 1px #22c55e55, 0 10px 24px #16a34a55;
+}
+
 .btn:hover {
   filter: brightness(1.08);
 }
@@ -222,18 +254,12 @@ body {
 .log-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 0;
 }
 
 .log-header h2 {
   margin: 0;
   font-size: 1rem;
-}
-
-.log-header span {
-  color: #9fb2d8;
-  font-size: 0.85rem;
 }
 
 .empty-log {
@@ -244,52 +270,32 @@ body {
   color: #9db0d6;
 }
 
-.goal-list {
-  list-style: none;
+.goal-grid {
   margin: 12px 0 0;
-  padding: 0;
   display: grid;
   gap: 8px;
 }
 
-.goal-item {
+.goal-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #121d34;
-  border: 1px solid #ffffff12;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }
 
-.pill {
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+.goal-cell-home {
+  text-align: left;
 }
 
-.pill.home {
-  background: #1f4ea73d;
-  color: #8fb8ff;
+.goal-cell-away {
+  text-align: right;
 }
 
-.pill.away {
-  background: #007ea63d;
-  color: #7ee7ff;
+.goal-cell {
+  min-height: 24px;
 }
 
 .goal-text {
   color: #dce6fb;
-}
-
-.goal-time {
-  font-variant-numeric: tabular-nums;
-  color: #95aacd;
-  font-size: 0.88rem;
 }
 
 @media (max-width: 720px) {
@@ -311,7 +317,4 @@ body {
     justify-items: start;
   }
 
-  .goal-time {
-    margin-top: -4px;
-  }
 }
