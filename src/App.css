@@ -59,7 +59,7 @@ body {
 .board {
   position: relative;
   z-index: 1;
-  max-width: 980px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 24px;
   border-radius: 0;
@@ -196,7 +196,7 @@ body {
 .clock-controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .button-row {
@@ -206,9 +206,10 @@ body {
 .btn {
   border: 0;
   border-radius: 12px;
-  padding: 10px 8px;
+  min-height: 48px;
+  padding: 10px 10px;
   color: white;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.08s ease, filter 0.2s ease;
@@ -263,13 +264,13 @@ body {
 }
 
 .quick-goal-trigger {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border: 1px solid #ffffff2a;
   border-radius: 10px;
   background: #0f1a31;
   color: #facc15;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   line-height: 1;
   display: grid;
   place-items: center;
@@ -340,8 +341,8 @@ body {
 }
 
 .delete-goal-btn {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border: 1px solid #ffffff26;
   border-radius: 8px;
   background: #1a263f;
@@ -414,7 +415,7 @@ body {
   }
 
   .clock-controls {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .goal-item {
@@ -422,4 +423,46 @@ body {
     justify-items: start;
   }
 
+}
+
+@media (min-width: 768px) and (max-width: 1366px) {
+  .app {
+    padding: 20px 16px;
+  }
+
+  .board {
+    max-width: 100%;
+    padding: 20px;
+  }
+
+  .score-section {
+    gap: 12px;
+  }
+
+  .team-card {
+    padding: 16px;
+  }
+
+  .team-score {
+    font-size: clamp(2.2rem, 2rem + 3vw, 3.8rem);
+  }
+
+  .goal-row {
+    gap: 10px;
+  }
+
+  .goal-text {
+    font-size: 0.95rem;
+  }
+
+  .clock-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .btn {
+    min-height: 46px;
+    padding: 10px 8px;
+    font-size: 0.82rem;
+  }
 }

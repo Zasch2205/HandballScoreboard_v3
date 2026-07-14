@@ -14,11 +14,11 @@ function getMinuteLabel(totalSeconds) {
   return `${minute}'`;
 }
 
-export default function App() {
-  const [homeScore, setHomeScore] = useState(0);
-  const [awayScore, setAwayScore] = useState(0);
+function createGoalId() {
+  return `goal-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+}
 
-  const [playerNumber, setPlayerNumber] = useState("");
+export default function App() {
   const [modalPlayerNumber, setModalPlayerNumber] = useState("");
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isEditScoreModalOpen, setIsEditScoreModalOpen] = useState(false);
@@ -38,6 +38,15 @@ export default function App() {
   }, [isRunning]);
 
   const clock = useMemo(() => formatClock(elapsedSeconds), [elapsedSeconds]);
+
+  const homeScore = useMemo(
+    () => goals.filter((goal) => goal.team === "home").length,
+    [goals]
+  );
+  const awayScore = useMemo(
+    () => goals.filter((goal) => goal.team === "away").length,
+    [goals]
+  );
 
   const homeScorersCount = useMemo(
     () => new Set(goals.filter((goal) => goal.team === "home").map((goal) => goal.player)).size,
@@ -69,8 +78,18 @@ export default function App() {
     }));
   }, [homeGoals, awayGoals]);
 
-  const addGoal = (team, number = playerNumber) => {
-    const trimmed = number.trim();
+  const openGoalModal = () => {
+    setModalPlayerNumber("");
+    setIsGoalModalOpen(true);
+  };
+
+  const closeGoalModal = () => {
+    setModalPlayerNumber("");
+    setIsGoalModalOpen(false);
+  };
+
+  const addGoalFromModal = (team) => {
+    const trimmed = String(modalPlayerNumber ?? "").trim();
 
     if (!trimmed) {
       alert("Bitte Rückennummer eingeben.");
@@ -82,34 +101,20 @@ export default function App() {
       return;
     }
 
-    if (team === "home") {
-      setHomeScore((prev) => prev + 1);
-    } else {
-      setAwayScore((prev) => prev + 1);
-    }
-
     const entry = {
-      id: crypto.randomUUID(),
+      id: createGoalId(),
       team,
       player: trimmed,
       minute: getMinuteLabel(elapsedSeconds),
       time: clock,
     };
 
-    setGoals((prev) => [entry, ...prev]);
-    setPlayerNumber("");
-  };
-
-  const openGoalModal = () => {
-    setModalPlayerNumber(playerNumber);
-    setIsGoalModalOpen(true);
-  };
-
-  const handleGoalFromModal = (team) => {
-    addGoal(team, modalPlayerNumber);
-    setPlayerNumber("");
-    setModalPlayerNumber("");
-    setIsGoalModalOpen(false);
+    try {
+      setGoals((prev) => [entry, ...prev]);
+      closeGoalModal();
+    } catch (error) {
+      alert("Tor konnte nicht gespeichert werden. Bitte erneut versuchen.");
+    }
   };
 
   const resetClock = () => {
@@ -123,12 +128,11 @@ export default function App() {
     );
     if (!confirmed) return;
 
-    setHomeScore(0);
-    setAwayScore(0);
     setGoals([]);
-    setPlayerNumber("");
     setIsRunning(false);
     setElapsedSeconds(0);
+    closeGoalModal();
+    setIsEditScoreModalOpen(false);
   };
 
   const deleteGoal = (goalId) => {
@@ -139,12 +143,6 @@ export default function App() {
       `Tor von ${goalToDelete.team === "home" ? "Heim" : "Gast"} (Spieler ${goalToDelete.player.padStart(2, "0")}, ${goalToDelete.time}) wirklich löschen?`
     );
     if (!confirmed) return;
-
-    if (goalToDelete.team === "home") {
-      setHomeScore((prev) => Math.max(0, prev - 1));
-    } else {
-      setAwayScore((prev) => Math.max(0, prev - 1));
-    }
 
     setGoals((prev) => prev.filter((goal) => goal.id !== goalId));
   };
@@ -240,7 +238,7 @@ export default function App() {
       </main>
 
       {isGoalModalOpen ? (
-        <div className="goal-modal-backdrop" onClick={() => setIsGoalModalOpen(false)}>
+        <div className="goal-modal-backdrop" onClick={closeGoalModal}>
           <div className="goal-modal" onClick={(e) => e.stopPropagation()}>
             <div className="input-row">
               <label htmlFor="modalPlayerNumber">Rückennummer Torschütze</label>
@@ -254,23 +252,22 @@ export default function App() {
                 onChange={(e) =>
                   setModalPlayerNumber(e.target.value.replace(/[^\d]/g, ""))
                 }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleGoalFromModal("home");
-                  }
-                }}
                 autoFocus
               />
             </div>
 
             <div className="button-row">
-              <button className="btn btn-home" onClick={() => handleGoalFromModal("home")}>
+              <button className="btn btn-home" type="button" onClick={() => addGoalFromModal("home")}>
                 Tor Heim
               </button>
-              <button className="btn btn-away" onClick={() => handleGoalFromModal("away")}>
+              <button className="btn btn-away" type="button" onClick={() => addGoalFromModal("away")}>
                 Tor Gast
               </button>
             </div>
+
+            <button className="btn btn-ghost" type="button" onClick={closeGoalModal}>
+              Abbrechen
+            </button>
           </div>
         </div>
       ) : null}
