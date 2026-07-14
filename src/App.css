@@ -256,6 +256,55 @@ body {
   padding: 16px;
 }
 
+.quick-goal-trigger-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.quick-goal-trigger {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #ffffff2a;
+  border-radius: 10px;
+  background: #0f1a31;
+  color: #facc15;
+  font-size: 1.25rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.2s ease;
+}
+
+.quick-goal-trigger:hover {
+  filter: brightness(1.1);
+}
+
+.quick-goal-trigger:active {
+  transform: translateY(1px);
+}
+
+.goal-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #02060fcc;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  padding: 16px;
+}
+
+.goal-modal {
+  width: min(420px, 100%);
+  background: linear-gradient(180deg, #16213a, #121b30);
+  border: 1px solid #ffffff22;
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
 .log-header {
   display: flex;
   align-items: center;

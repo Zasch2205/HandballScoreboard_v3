@@ -19,6 +19,8 @@ export default function App() {
   const [awayScore, setAwayScore] = useState(0);
 
   const [playerNumber, setPlayerNumber] = useState("");
+  const [modalPlayerNumber, setModalPlayerNumber] = useState("");
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [goals, setGoals] = useState([]);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -66,8 +68,8 @@ export default function App() {
     }));
   }, [homeGoals, awayGoals]);
 
-  const addGoal = (team) => {
-    const trimmed = playerNumber.trim();
+  const addGoal = (team, number = playerNumber) => {
+    const trimmed = number.trim();
 
     if (!trimmed) {
       alert("Bitte Rückennummer eingeben.");
@@ -95,6 +97,18 @@ export default function App() {
 
     setGoals((prev) => [entry, ...prev]);
     setPlayerNumber("");
+  };
+
+  const openGoalModal = () => {
+    setModalPlayerNumber(playerNumber);
+    setIsGoalModalOpen(true);
+  };
+
+  const handleGoalFromModal = (team) => {
+    addGoal(team, modalPlayerNumber);
+    setPlayerNumber("");
+    setModalPlayerNumber("");
+    setIsGoalModalOpen(false);
   };
 
   const resetClock = () => {
@@ -174,36 +188,18 @@ export default function App() {
           )}
         </section>
 
+        <div className="quick-goal-trigger-wrap">
+          <button
+            className="quick-goal-trigger"
+            onClick={openGoalModal}
+            aria-label="Tor erfassen"
+            title="Tor erfassen"
+          >
+            🤾
+          </button>
+        </div>
+
         <section className="controls">
-          <div className="input-row">
-            <label htmlFor="playerNumber">Rückennummer Torschütze</label>
-            <input
-              id="playerNumber"
-              type="text"
-              inputMode="numeric"
-              maxLength={2}
-              placeholder="z. B. 7"
-              value={playerNumber}
-              onChange={(e) =>
-                setPlayerNumber(e.target.value.replace(/[^\d]/g, ""))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  addGoal("home");
-                }
-              }}
-            />
-          </div>
-
-          <div className="button-row">
-            <button className="btn btn-home" onClick={() => addGoal("home")}>
-              Tor Heim
-            </button>
-            <button className="btn btn-away" onClick={() => addGoal("away")}>
-              Tor Gast
-            </button>
-          </div>
-
           <div className="clock-controls">
             <button
               className={`btn ${isRunning ? "btn-ghost" : "btn-start"}`}
@@ -220,6 +216,42 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {isGoalModalOpen ? (
+        <div className="goal-modal-backdrop" onClick={() => setIsGoalModalOpen(false)}>
+          <div className="goal-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="input-row">
+              <label htmlFor="modalPlayerNumber">Rückennummer Torschütze</label>
+              <input
+                id="modalPlayerNumber"
+                type="text"
+                inputMode="numeric"
+                maxLength={2}
+                placeholder="z. B. 7"
+                value={modalPlayerNumber}
+                onChange={(e) =>
+                  setModalPlayerNumber(e.target.value.replace(/[^\d]/g, ""))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleGoalFromModal("home");
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div className="button-row">
+              <button className="btn btn-home" onClick={() => handleGoalFromModal("home")}>
+                Tor Heim
+              </button>
+              <button className="btn btn-away" onClick={() => handleGoalFromModal("away")}>
+                Tor Gast
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
