@@ -195,8 +195,8 @@ body {
 .button-row,
 .clock-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .button-row {
@@ -206,9 +206,9 @@ body {
 .btn {
   border: 0;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 10px 8px;
   color: white;
-  font-size: 0.95rem;
+  font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.08s ease, filter 0.2s ease;
@@ -305,6 +305,57 @@ body {
   gap: 12px;
 }
 
+.edit-score-modal {
+  width: min(520px, 100%);
+  max-height: 80vh;
+}
+
+.edit-score-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #dce6fb;
+}
+
+.edit-goal-list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.edit-goal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0f1a31;
+  border: 1px solid #ffffff1a;
+}
+
+.edit-goal-text {
+  color: #dce6fb;
+  font-size: 0.92rem;
+}
+
+.delete-goal-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #ffffff26;
+  border-radius: 8px;
+  background: #1a263f;
+  cursor: pointer;
+}
+
+.delete-goal-btn:hover {
+  filter: brightness(1.1);
+}
+
+.edit-modal-ok {
+  margin-top: 2px;
+}
+
 .log-header {
   display: flex;
   align-items: center;
@@ -363,7 +414,7 @@ body {
   }
 
   .clock-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .goal-item {

@@ -21,6 +21,7 @@ export default function App() {
   const [playerNumber, setPlayerNumber] = useState("");
   const [modalPlayerNumber, setModalPlayerNumber] = useState("");
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [isEditScoreModalOpen, setIsEditScoreModalOpen] = useState(false);
   const [goals, setGoals] = useState([]);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -130,6 +131,24 @@ export default function App() {
     setElapsedSeconds(0);
   };
 
+  const deleteGoal = (goalId) => {
+    const goalToDelete = goals.find((goal) => goal.id === goalId);
+    if (!goalToDelete) return;
+
+    const confirmed = window.confirm(
+      `Tor von ${goalToDelete.team === "home" ? "Heim" : "Gast"} (Spieler ${goalToDelete.player.padStart(2, "0")}, ${goalToDelete.time}) wirklich löschen?`
+    );
+    if (!confirmed) return;
+
+    if (goalToDelete.team === "home") {
+      setHomeScore((prev) => Math.max(0, prev - 1));
+    } else {
+      setAwayScore((prev) => Math.max(0, prev - 1));
+    }
+
+    setGoals((prev) => prev.filter((goal) => goal.id !== goalId));
+  };
+
   return (
     <div className="app">
       <div className="bg-glow bg-glow-left" />
@@ -213,6 +232,9 @@ export default function App() {
             <button className="btn btn-danger" onClick={resetMatch}>
               Spiel Reset
             </button>
+            <button className="btn btn-ghost" onClick={() => setIsEditScoreModalOpen(true)}>
+              Spielstand bearbeiten
+            </button>
           </div>
         </section>
       </main>
@@ -249,6 +271,40 @@ export default function App() {
                 Tor Gast
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isEditScoreModalOpen ? (
+        <div className="goal-modal-backdrop" onClick={() => setIsEditScoreModalOpen(false)}>
+          <div className="goal-modal edit-score-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="edit-score-title">Spielstand bearbeiten</h3>
+
+            {goals.length === 0 ? (
+              <div className="empty-log">noch keine Tore vorhanden</div>
+            ) : (
+              <div className="edit-goal-list">
+                {goals.map((goal) => (
+                  <div key={goal.id} className="edit-goal-item">
+                    <span className="edit-goal-text">
+                      {goal.team === "home" ? "Heim" : "Gast"} · Spieler {goal.player.padStart(2, "0")} · {goal.time}
+                    </span>
+                    <button
+                      className="delete-goal-btn"
+                      onClick={() => deleteGoal(goal.id)}
+                      aria-label="Tor löschen"
+                      title="Tor löschen"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="btn btn-ghost edit-modal-ok" onClick={() => setIsEditScoreModalOpen(false)}>
+              OK
+            </button>
           </div>
         </div>
       ) : null}
