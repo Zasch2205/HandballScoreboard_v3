@@ -68,14 +68,15 @@ final class ScoreboardViewModel: ObservableObject {
         self.userDefaults = userDefaults
         restoreState()
 
-        persistenceCancellable = Publishers.CombineLatest3(
+        persistenceCancellable = Publishers.CombineLatest(
             $goals.removeDuplicates(),
-            $elapsedSeconds.removeDuplicates(),
             $isRunning.removeDuplicates()
         )
         .dropFirst()
-        .sink { [weak self] goals, elapsedSeconds, isRunning in
-            self?.saveState(goals: goals, elapsedSeconds: elapsedSeconds, isRunning: isRunning)
+        .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+        .sink { [weak self] goals, isRunning in
+            guard let self else { return }
+            saveState(goals: goals, elapsedSeconds: elapsedSeconds, isRunning: isRunning)
         }
 
         timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
@@ -84,6 +85,9 @@ final class ScoreboardViewModel: ObservableObject {
                 guard let self else { return }
                 if isRunning {
                     elapsedSeconds += 1
+                    if elapsedSeconds % 15 == 0 {
+                        persistNow()
+                    }
                 }
             }
     }
@@ -135,26 +139,27 @@ final class ScoreboardViewModel: ObservableObject {
     func resetClock() {
         isRunning = false
         elapsedSeconds = 0
+        persistNow()
     }
 
     func resetMatch() {
         goals = []
         isRunning = false
         elapsedSeconds = 0
+        persistNow()
     }
 
-    func addGoal(playerNumber: String, team: Team) throws {
+    func addGoal(playerNumber: String, team: Team) -> String? {
         let trimmed = playerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmed.isEmpty else {
-            throw GoalValidationError.missingPlayerNumber
+            return GoalValidationError.missingPlayerNumber.localizedDescription
         }
 
-        let numberRegex = try NSRegularExpression(pattern: "^\\\\d{1,2}$")
-        let range = NSRange(location: 0, length: trimmed.utf16.count)
+        let isValidPlayerNumber = (1...2).contains(trimmed.count) && trimmed.allSatisfy(\.isNumber)
 
-        guard numberRegex.firstMatch(in: trimmed, options: [], range: range) != nil else {
-            throw GoalValidationError.invalidPlayerNumber
+        guard isValidPlayerNumber else {
+            return GoalValidationError.invalidPlayerNumber.localizedDescription
         }
 
         let entry = GoalEntry(
@@ -165,10 +170,13 @@ final class ScoreboardViewModel: ObservableObject {
         )
 
         goals.insert(entry, at: 0)
+        persistNow()
+        return nil
     }
 
     func deleteGoal(goalID: UUID) {
         goals.removeAll { $0.id == goalID }
+        persistNow()
     }
 
     func goalDeleteConfirmationText(_ goal: GoalEntry) -> String {

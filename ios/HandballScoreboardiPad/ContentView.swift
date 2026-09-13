@@ -10,35 +10,35 @@ struct ContentView: View {
     @State private var showRestorePrompt = false
 
     var body: some View {
-        ZStack {
-            backgroundLayer
+        GeometryReader { proxy in
+            let insets = proxy.safeAreaInsets
 
-            VStack(spacing: 20) {
-                topBar
-                scoreSection
-                goalLogSection
-                controlsSection
-            }
-            .padding(24)
+            ZStack {
+                backgroundLayer
 
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    quickGoalButton
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        topBar
+                        scoreSection
+                        goalLogSection
+                        controlsSection
+                    }
+                    .padding(.top, insets.top + 20)
+                    .padding(.leading, 20)
+                    .padding(.trailing, max(24, insets.trailing + 92))
+                    .padding(.bottom, 120)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
                 }
             }
-            .padding(.trailing, 28)
-            .padding(.bottom, 28)
+            .overlay(alignment: .bottomTrailing) {
+                quickGoalButton
+                    .padding(.trailing, insets.trailing + 120)
+                    .padding(.bottom, insets.bottom + 40)
+            }
         }
         .sheet(isPresented: $isGoalSheetOpen) {
             GoalEntrySheet { playerNumber, team in
-                do {
-                    try viewModel.addGoal(playerNumber: playerNumber, team: team)
-                    isGoalSheetOpen = false
-                } catch {
-                    throw error
-                }
+                viewModel.addGoal(playerNumber: playerNumber, team: team)
             }
         }
         .sheet(isPresented: $isEditScoreSheetOpen) {
@@ -86,54 +86,147 @@ struct ContentView: View {
     }
 
     private var backgroundLayer: some View {
-        LinearGradient(
-            colors: [Color(red: 0.04, green: 0.07, blue: 0.14), Color(red: 0.07, green: 0.11, blue: 0.20)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
+        ZStack {
+            Image("BackgroundPhoto")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+                .contrast(1.28)
+                .saturation(0.88)
+                .brightness(-0.28)
 
-    private var topBar: some View {
-        HStack {
-            Text("Handball Scoreboard")
-                .font(.system(size: 38, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.03, blue: 0.06).opacity(0.9),
+                    Color(red: 0.03, green: 0.05, blue: 0.1).opacity(0.83),
+                    Color(red: 0.02, green: 0.03, blue: 0.06).opacity(0.92)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            Spacer()
+            RadialGradient(
+                colors: [
+                    Color(red: 0.11, green: 0.19, blue: 0.37).opacity(0.22),
+                    .clear
+                ],
+                center: .topLeading,
+                startRadius: 40,
+                endRadius: 640
+            )
+            .ignoresSafeArea()
 
-            Text(viewModel.clock)
-                .font(.system(size: 32, weight: .bold, design: .monospaced))
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Color.white.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
-                )
-                .foregroundStyle(Color(red: 0.55, green: 0.91, blue: 1.0))
+            RadialGradient(
+                colors: [
+                    Color(red: 0.0, green: 0.83, blue: 1.0).opacity(0.12),
+                    .clear
+                ],
+                center: .topTrailing,
+                startRadius: 40,
+                endRadius: 740
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Color(red: 0.16, green: 0.47, blue: 1.0).opacity(0.18))
+                .frame(width: 420, height: 420)
+                .blur(radius: 80)
+                .offset(x: -220, y: -260)
+
+            Circle()
+                .fill(Color(red: 0.0, green: 0.9, blue: 1.0).opacity(0.14))
+                .frame(width: 460, height: 460)
+                .blur(radius: 86)
+                .offset(x: 260, y: 290)
         }
     }
 
+    private var topBar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text("Handball Scoreboard")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .allowsTightening(true)
+
+                Spacer(minLength: 8)
+                clockChip
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Handball Scoreboard")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .allowsTightening(true)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    clockChip
+                }
+            }
+        }
+    }
+
+    private var clockChip: some View {
+        Text(viewModel.clock)
+            .font(.system(size: 32, weight: .bold, design: .monospaced))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
+            )
+            .foregroundStyle(Color(red: 0.55, green: 0.91, blue: 1.0))
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+    }
+
     private var scoreSection: some View {
-        HStack(alignment: .center, spacing: 16) {
-            TeamScoreCard(
-                title: "Heim",
-                displayScore: viewModel.homeDisplayScore,
-                actualScore: viewModel.homeScore
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 16) {
+                TeamScoreCard(
+                    title: "Heim",
+                    displayScore: viewModel.homeDisplayScore,
+                    actualScore: viewModel.homeScore
+                )
 
-            Text(":")
-                .font(.system(size: 72, weight: .heavy, design: .rounded))
-                .foregroundStyle(Color(red: 0.52, green: 0.66, blue: 1.0))
-                .frame(maxWidth: 50)
+                Text(":")
+                    .font(.system(size: 72, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color(red: 0.52, green: 0.66, blue: 1.0))
+                    .frame(width: 44)
 
-            TeamScoreCard(
-                title: "Gast",
-                displayScore: viewModel.awayDisplayScore,
-                actualScore: viewModel.awayScore
-            )
+                TeamScoreCard(
+                    title: "Gast",
+                    displayScore: viewModel.awayDisplayScore,
+                    actualScore: viewModel.awayScore
+                )
+            }
+
+            VStack(spacing: 12) {
+                TeamScoreCard(
+                    title: "Heim",
+                    displayScore: viewModel.homeDisplayScore,
+                    actualScore: viewModel.homeScore
+                )
+
+                Text(":")
+                    .font(.system(size: 56, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color(red: 0.52, green: 0.66, blue: 1.0))
+
+                TeamScoreCard(
+                    title: "Gast",
+                    displayScore: viewModel.awayDisplayScore,
+                    actualScore: viewModel.awayScore
+                )
+            }
         }
     }
 
@@ -166,26 +259,54 @@ struct ContentView: View {
     }
 
     private var controlsSection: some View {
-        HStack(spacing: 12) {
-            Button(viewModel.isRunning ? "Pause" : "Start") {
-                viewModel.toggleRunning()
-            }
-            .buttonStyle(PrimaryActionButtonStyle(color: viewModel.isRunning ? Color(red: 0.1, green: 0.15, blue: 0.25) : Color.green))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Button(viewModel.isRunning ? "Pause" : "Start") {
+                    viewModel.toggleRunning()
+                }
+                .buttonStyle(PrimaryActionButtonStyle(color: viewModel.isRunning ? Color(red: 0.1, green: 0.15, blue: 0.25) : Color.green))
 
-            Button("Uhr Reset") {
-                viewModel.resetClock()
-            }
-            .buttonStyle(SecondaryActionButtonStyle())
+                Button("Uhr Reset") {
+                    viewModel.resetClock()
+                }
+                .buttonStyle(SecondaryActionButtonStyle())
 
-            Button("Spiel Reset") {
-                showResetMatchConfirmation = true
-            }
-            .buttonStyle(PrimaryActionButtonStyle(color: Color.red))
+                Button("Spiel Reset") {
+                    showResetMatchConfirmation = true
+                }
+                .buttonStyle(PrimaryActionButtonStyle(color: Color.red))
 
-            Button("Spielstand bearbeiten") {
-                isEditScoreSheetOpen = true
+                Button("Spielstand bearbeiten") {
+                    isEditScoreSheetOpen = true
+                }
+                .buttonStyle(SecondaryActionButtonStyle())
             }
-            .buttonStyle(SecondaryActionButtonStyle())
+
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    Button(viewModel.isRunning ? "Pause" : "Start") {
+                        viewModel.toggleRunning()
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle(color: viewModel.isRunning ? Color(red: 0.1, green: 0.15, blue: 0.25) : Color.green))
+
+                    Button("Uhr Reset") {
+                        viewModel.resetClock()
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle())
+                }
+
+                HStack(spacing: 12) {
+                    Button("Spiel Reset") {
+                        showResetMatchConfirmation = true
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle(color: Color.red))
+
+                    Button("Spielstand bearbeiten") {
+                        isEditScoreSheetOpen = true
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle())
+                }
+            }
         }
     }
 
@@ -274,12 +395,21 @@ private struct GoalCell: View {
 }
 
 private struct GoalEntrySheet: View {
-    let onAddGoal: (_ playerNumber: String, _ team: Team) throws -> Void
+    let onAddGoal: (_ playerNumber: String, _ team: Team) -> String?
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var playerNumber = ""
     @State private var errorMessage: String?
+    @FocusState private var isPlayerNumberFocused: Bool
+
+    private var sanitizedPlayerNumber: String {
+        String(playerNumber.filter { $0.isNumber }.prefix(2))
+    }
+
+    private var canSubmitGoal: Bool {
+        !sanitizedPlayerNumber.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -289,7 +419,10 @@ private struct GoalEntrySheet: View {
                         .font(.headline)
                     TextField("z. B. 7", text: $playerNumber)
                         .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
                         .textFieldStyle(.roundedBorder)
+                        .focused($isPlayerNumberFocused)
                         .onChange(of: playerNumber) { _, newValue in
                             playerNumber = String(newValue.filter { $0.isNumber }.prefix(2))
                         }
@@ -300,11 +433,13 @@ private struct GoalEntrySheet: View {
                         addGoal(team: .home)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.blue))
+                    .disabled(!canSubmitGoal)
 
                     Button("Tor Gast") {
                         addGoal(team: .away)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.cyan))
+                    .disabled(!canSubmitGoal)
                 }
 
                 Button("Abbrechen") {
@@ -317,6 +452,11 @@ private struct GoalEntrySheet: View {
             .padding(20)
             .navigationTitle("Tor erfassen")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isPlayerNumberFocused = true
+                }
+            }
             .alert("Hinweis", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { _ in errorMessage = nil }
@@ -330,11 +470,14 @@ private struct GoalEntrySheet: View {
     }
 
     private func addGoal(team: Team) {
-        do {
-            try onAddGoal(playerNumber, team)
-        } catch {
-            errorMessage = error.localizedDescription
+        playerNumber = sanitizedPlayerNumber
+
+        if let message = onAddGoal(playerNumber, team) {
+            errorMessage = message
+            return
         }
+
+        dismiss()
     }
 }
 
@@ -415,6 +558,9 @@ private struct PrimaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .allowsTightening(true)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
@@ -427,6 +573,9 @@ private struct SecondaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .allowsTightening(true)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
