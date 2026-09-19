@@ -1,5 +1,5 @@
 import Combine
-import Foundation
+@preconcurrency import Foundation
 
 enum Team: String, CaseIterable, Codable {
     case home
@@ -45,49 +45,115 @@ enum GoalValidationError: LocalizedError {
     }
 }
 
+enum TeamRenameValidationError: LocalizedError {
+    case invalidTeamName
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidTeamName:
+            return "Bitte einen gültigen Teamnamen eingeben."
+        }
+    }
+}
+
 @MainActor
 final class ScoreboardViewModel: ObservableObject {
-    @Published var goals: [GoalEntry] = []
+    @Published var goals: [GoalEntry] = [] {
+        didSet {
+            recalculateDerivedState(from: goals)
+        }
+    }
     @Published var elapsedSeconds = 0
     @Published var isRunning = false
+    @Published private(set) var homeTeamName = Team.home.label
+    @Published private(set) var awayTeamName = Team.away.label
     @Published private(set) var shouldShowRestorePrompt = false
+
+    typealias GoalPair = (home: GoalEntry?, away: GoalEntry?)
 
     private struct PersistedState: Codable {
         let goals: [GoalEntry]
         let elapsedSeconds: Int
         let isRunning: Bool
+        let homeTeamName: String
+        let awayTeamName: String
+
+        private enum CodingKeys: String, CodingKey {
+            case goals
+            case elapsedSeconds
+            case isRunning
+            case homeTeamName
+            case awayTeamName
+        }
+
+        init(goals: [GoalEntry], elapsedSeconds: Int, isRunning: Bool, homeTeamName: String, awayTeamName: String) {
+            self.goals = goals
+            self.elapsedSeconds = elapsedSeconds
+            self.isRunning = isRunning
+            self.homeTeamName = homeTeamName
+            self.awayTeamName = awayTeamName
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            goals = try container.decode([GoalEntry].self, forKey: .goals)
+            elapsedSeconds = try container.decode(Int.self, forKey: .elapsedSeconds)
+            isRunning = try container.decode(Bool.self, forKey: .isRunning)
+            homeTeamName = try container.decodeIfPresent(String.self, forKey: .homeTeamName) ?? Team.home.label
+            awayTeamName = try container.decodeIfPresent(String.self, forKey: .awayTeamName) ?? Team.away.label
+        }
+    }
+
+    private struct DerivedState {
+        let homeScore: Int
+        let awayScore: Int
+        let homeDisplayScore: Int
+        let awayDisplayScore: Int
+        let pairedGoals: [GoalPair]
+
+        static let empty = DerivedState(
+            homeScore: 0,
+            awayScore: 0,
+            homeDisplayScore: 0,
+            awayDisplayScore: 0,
+            pairedGoals: []
+        )
     }
 
     private static let persistedStateKey = "handballscoreboard.ipad.state.v1"
+    private static let maxStoredGoals = 500
+    private static let maxPersistedDataBytes = 2_000_000
+    private static let maxElapsedSeconds = 86_399
+    private static let maxMinuteLabel = (maxElapsedSeconds / 60) + 1
+    private static let maxTeamNameLength = 24
 
     private let userDefaults: UserDefaults
+    private let persistenceQueue = DispatchQueue(label: "com.handballscoreboard.persistence", qos: .utility)
     private var timerCancellable: AnyCancellable?
-    private var persistenceCancellable: AnyCancellable?
+    private var derivedState = DerivedState.empty
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         restoreState()
-
-        persistenceCancellable = Publishers.CombineLatest(
-            $goals.removeDuplicates(),
-            $isRunning.removeDuplicates()
-        )
-        .dropFirst()
-        .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-        .sink { [weak self] goals, isRunning in
-            guard let self else { return }
-            saveState(goals: goals, elapsedSeconds: elapsedSeconds, isRunning: isRunning)
-        }
+        recalculateDerivedState(from: goals)
 
         timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self else { return }
-                if isRunning {
-                    elapsedSeconds += 1
-                    if elapsedSeconds % 15 == 0 {
-                        persistNow()
-                    }
+                guard isRunning else { return }
+
+                let nextElapsedSeconds = min(elapsedSeconds + 1, Self.maxElapsedSeconds)
+                elapsedSeconds = nextElapsedSeconds
+
+                if nextElapsedSeconds >= Self.maxElapsedSeconds {
+                    isRunning = false
+                    persistNow()
+                    return
+                }
+
+                if nextElapsedSeconds.isMultiple(of: 15) {
+                    persistNow()
                 }
             }
     }
@@ -97,43 +163,37 @@ final class ScoreboardViewModel: ObservableObject {
     }
 
     var homeScore: Int {
-        goals.filter { $0.team == .home }.count
+        derivedState.homeScore
     }
 
     var awayScore: Int {
-        goals.filter { $0.team == .away }.count
-    }
-
-    var homeScorersCount: Int {
-        Set(goals.filter { $0.team == .home }.map { $0.player }).count
-    }
-
-    var awayScorersCount: Int {
-        Set(goals.filter { $0.team == .away }.map { $0.player }).count
+        derivedState.awayScore
     }
 
     var homeDisplayScore: Int {
-        homeScore * homeScorersCount
+        derivedState.homeDisplayScore
     }
 
     var awayDisplayScore: Int {
-        awayScore * awayScorersCount
+        derivedState.awayDisplayScore
     }
 
-    var pairedGoals: [(home: GoalEntry?, away: GoalEntry?)] {
-        let homeGoals = goals.filter { $0.team == .home }
-        let awayGoals = goals.filter { $0.team == .away }
+    var pairedGoals: [GoalPair] {
+        derivedState.pairedGoals
+    }
 
-        return (0..<max(homeGoals.count, awayGoals.count)).map { index in
-            (
-                home: index < homeGoals.count ? homeGoals[index] : nil,
-                away: index < awayGoals.count ? awayGoals[index] : nil
-            )
+    func teamName(for team: Team) -> String {
+        switch team {
+        case .home:
+            return homeTeamName
+        case .away:
+            return awayTeamName
         }
     }
 
     func toggleRunning() {
         isRunning.toggle()
+        persistNow()
     }
 
     func resetClock() {
@@ -156,9 +216,7 @@ final class ScoreboardViewModel: ObservableObject {
             return GoalValidationError.missingPlayerNumber.localizedDescription
         }
 
-        let isValidPlayerNumber = (1...2).contains(trimmed.count) && trimmed.allSatisfy(\.isNumber)
-
-        guard isValidPlayerNumber else {
+        guard Self.isValidPlayerNumber(trimmed) else {
             return GoalValidationError.invalidPlayerNumber.localizedDescription
         }
 
@@ -170,6 +228,11 @@ final class ScoreboardViewModel: ObservableObject {
         )
 
         goals.insert(entry, at: 0)
+
+        if goals.count > Self.maxStoredGoals {
+            goals.removeLast(goals.count - Self.maxStoredGoals)
+        }
+
         persistNow()
         return nil
     }
@@ -179,12 +242,49 @@ final class ScoreboardViewModel: ObservableObject {
         persistNow()
     }
 
+    func renameTeam(_ team: Team, to newName: String) -> String? {
+        guard let sanitizedName = Self.sanitizeTeamName(newName) else {
+            return TeamRenameValidationError.invalidTeamName.localizedDescription
+        }
+
+        switch team {
+        case .home:
+            guard homeTeamName != sanitizedName else { return nil }
+            homeTeamName = sanitizedName
+        case .away:
+            guard awayTeamName != sanitizedName else { return nil }
+            awayTeamName = sanitizedName
+        }
+
+        persistNow()
+        return nil
+    }
+
+    func resetTeamNames() {
+        let defaultHomeName = Team.home.label
+        let defaultAwayName = Team.away.label
+
+        guard homeTeamName != defaultHomeName || awayTeamName != defaultAwayName else {
+            return
+        }
+
+        homeTeamName = defaultHomeName
+        awayTeamName = defaultAwayName
+        persistNow()
+    }
+
     func goalDeleteConfirmationText(_ goal: GoalEntry) -> String {
-        "Tor von \(goal.team.label) (Spieler \(goal.player.paddedPlayerNumber), \(goal.time)) wirklich löschen?"
+        "Tor von \(teamName(for: goal.team)) (Spieler \(goal.player.paddedPlayerNumber), \(goal.time)) wirklich löschen?"
     }
 
     func persistNow() {
-        saveState(goals: goals, elapsedSeconds: elapsedSeconds, isRunning: isRunning)
+        saveState(
+            goals: goals,
+            elapsedSeconds: elapsedSeconds,
+            isRunning: isRunning,
+            homeTeamName: homeTeamName,
+            awayTeamName: awayTeamName
+        )
     }
 
     func continueRecoveredSession() {
@@ -197,53 +297,221 @@ final class ScoreboardViewModel: ObservableObject {
         persistNow()
     }
 
+    private func recalculateDerivedState(from goals: [GoalEntry]) {
+        var homeGoals: [GoalEntry] = []
+        homeGoals.reserveCapacity(goals.count)
+
+        var awayGoals: [GoalEntry] = []
+        awayGoals.reserveCapacity(goals.count)
+
+        var homeScorers = Set<String>()
+        var awayScorers = Set<String>()
+
+        for goal in goals {
+            switch goal.team {
+            case .home:
+                homeGoals.append(goal)
+                homeScorers.insert(goal.player)
+            case .away:
+                awayGoals.append(goal)
+                awayScorers.insert(goal.player)
+            }
+        }
+
+        let homeScore = homeGoals.count
+        let awayScore = awayGoals.count
+
+        var goalPairs: [GoalPair] = []
+        goalPairs.reserveCapacity(max(homeGoals.count, awayGoals.count))
+
+        for index in 0..<max(homeGoals.count, awayGoals.count) {
+            goalPairs.append((
+                home: index < homeGoals.count ? homeGoals[index] : nil,
+                away: index < awayGoals.count ? awayGoals[index] : nil
+            ))
+        }
+
+        derivedState = DerivedState(
+            homeScore: homeScore,
+            awayScore: awayScore,
+            homeDisplayScore: homeScore * homeScorers.count,
+            awayDisplayScore: awayScore * awayScorers.count,
+            pairedGoals: goalPairs
+        )
+    }
+
     private func restoreState() {
         guard let data = userDefaults.data(forKey: Self.persistedStateKey) else {
+            return
+        }
+
+        guard data.count <= Self.maxPersistedDataBytes else {
+            userDefaults.removeObject(forKey: Self.persistedStateKey)
             return
         }
 
         let decoder = JSONDecoder()
 
         guard let state = try? decoder.decode(PersistedState.self, from: data) else {
+            userDefaults.removeObject(forKey: Self.persistedStateKey)
             return
         }
 
-        let hasMeaningfulSavedSession = !state.goals.isEmpty || state.elapsedSeconds > 0 || state.isRunning
+        let sanitizedGoals = sanitizeGoals(state.goals)
+        let sanitizedElapsedSeconds = Self.clampElapsedSeconds(state.elapsedSeconds)
+        let sanitizedIsRunning = state.isRunning
+
+        homeTeamName = Self.sanitizeTeamName(state.homeTeamName) ?? Team.home.label
+        awayTeamName = Self.sanitizeTeamName(state.awayTeamName) ?? Team.away.label
+
+        let hasMeaningfulSavedSession = !sanitizedGoals.isEmpty || sanitizedElapsedSeconds > 0 || sanitizedIsRunning
 
         guard hasMeaningfulSavedSession else {
             return
         }
 
-        goals = state.goals
-        elapsedSeconds = max(0, state.elapsedSeconds)
-        isRunning = state.isRunning
+        goals = sanitizedGoals
+        elapsedSeconds = sanitizedElapsedSeconds
+        isRunning = sanitizedIsRunning
         shouldShowRestorePrompt = true
     }
 
-    private func saveState(goals: [GoalEntry], elapsedSeconds: Int, isRunning: Bool) {
+    private func saveState(
+        goals: [GoalEntry],
+        elapsedSeconds: Int,
+        isRunning: Bool,
+        homeTeamName: String,
+        awayTeamName: String
+    ) {
+        let persistedStateKey = Self.persistedStateKey
+        let maxPersistedDataBytes = Self.maxPersistedDataBytes
+
         let state = PersistedState(
-            goals: goals,
-            elapsedSeconds: max(0, elapsedSeconds),
-            isRunning: isRunning
+            goals: Array(goals.prefix(Self.maxStoredGoals)),
+            elapsedSeconds: Self.clampElapsedSeconds(elapsedSeconds),
+            isRunning: isRunning,
+            homeTeamName: homeTeamName,
+            awayTeamName: awayTeamName
         )
 
-        let encoder = JSONEncoder()
+        let userDefaults = self.userDefaults
 
-        guard let data = try? encoder.encode(state) else {
-            return
+        persistenceQueue.async {
+            let encoder = JSONEncoder()
+
+            guard let data = try? encoder.encode(state), data.count <= maxPersistedDataBytes else {
+                return
+            }
+
+            userDefaults.set(data, forKey: persistedStateKey)
+        }
+    }
+
+    private func sanitizeGoals(_ rawGoals: [GoalEntry]) -> [GoalEntry] {
+        var sanitizedGoals: [GoalEntry] = []
+        sanitizedGoals.reserveCapacity(min(rawGoals.count, Self.maxStoredGoals))
+
+        for goal in rawGoals {
+            guard
+                Self.isValidPlayerNumber(goal.player),
+                Self.isValidMinuteLabel(goal.minute),
+                Self.isValidClock(goal.time)
+            else {
+                continue
+            }
+
+            sanitizedGoals.append(goal)
+
+            if sanitizedGoals.count >= Self.maxStoredGoals {
+                break
+            }
         }
 
-        userDefaults.set(data, forKey: Self.persistedStateKey)
+        return sanitizedGoals
+    }
+
+    private static func clampElapsedSeconds(_ seconds: Int) -> Int {
+        min(max(0, seconds), maxElapsedSeconds)
+    }
+
+    private static func sanitizeTeamName(_ rawName: String) -> String? {
+        let filteredScalars = rawName.unicodeScalars.filter { scalar in
+            !CharacterSet.controlCharacters.contains(scalar) || scalar.value == 32
+        }
+
+        let filtered = String(String.UnicodeScalarView(filteredScalars))
+
+        let collapsedWhitespace = filtered
+            .components(separatedBy: CharacterSet.whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let limited = String(collapsedWhitespace.prefix(maxTeamNameLength))
+
+        guard !limited.isEmpty else {
+            return nil
+        }
+
+        return limited
+    }
+
+    private static func isValidPlayerNumber(_ number: String) -> Bool {
+        let digitCount = number.count
+        return (1...2).contains(digitCount) && number.allSatisfy(\.isNumber)
+    }
+
+    private static func isValidClock(_ clock: String) -> Bool {
+        let components = clock.split(separator: ":", omittingEmptySubsequences: false)
+
+        guard components.count == 2 else {
+            return false
+        }
+
+        let minutesPart = String(components[0])
+        let secondsPart = String(components[1])
+
+        guard
+            (2...4).contains(minutesPart.count),
+            minutesPart.allSatisfy(\.isNumber),
+            secondsPart.count == 2,
+            secondsPart.allSatisfy(\.isNumber),
+            let seconds = Int(secondsPart),
+            (0...59).contains(seconds)
+        else {
+            return false
+        }
+
+        return true
+    }
+
+    private static func isValidMinuteLabel(_ label: String) -> Bool {
+        guard label.hasSuffix("'") else {
+            return false
+        }
+
+        let digits = String(label.dropLast())
+
+        guard
+            (1...4).contains(digits.count),
+            digits.allSatisfy(\.isNumber),
+            let minute = Int(digits),
+            (1...maxMinuteLabel).contains(minute)
+        else {
+            return false
+        }
+
+        return true
     }
 
     private static func formatClock(_ totalSeconds: Int) -> String {
-        let minutes = String(format: "%02d", totalSeconds / 60)
-        let seconds = String(format: "%02d", totalSeconds % 60)
+        let safeSeconds = clampElapsedSeconds(totalSeconds)
+        let minutes = String(format: "%02d", safeSeconds / 60)
+        let seconds = String(format: "%02d", safeSeconds % 60)
         return "\(minutes):\(seconds)"
     }
 
     private static func minuteLabel(_ totalSeconds: Int) -> String {
-        "\((totalSeconds / 60) + 1)'"
+        "\((clampElapsedSeconds(totalSeconds) / 60) + 1)'"
     }
 }
 

@@ -37,16 +37,28 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isGoalSheetOpen) {
-            GoalEntrySheet { playerNumber, team in
+            GoalEntrySheet(
+                homeTeamName: viewModel.homeTeamName,
+                awayTeamName: viewModel.awayTeamName
+            ) { playerNumber, team in
                 viewModel.addGoal(playerNumber: playerNumber, team: team)
             }
         }
         .sheet(isPresented: $isEditScoreSheetOpen) {
             EditScoreSheet(
                 goals: viewModel.goals,
+                homeTeamName: viewModel.homeTeamName,
+                awayTeamName: viewModel.awayTeamName,
+                teamName: viewModel.teamName(for:),
                 deleteConfirmationText: viewModel.goalDeleteConfirmationText(_:),
                 onDelete: { goal in
                     viewModel.deleteGoal(goalID: goal.id)
+                },
+                onRenameTeam: { team, name in
+                    viewModel.renameTeam(team, to: name)
+                },
+                onResetTeamNames: {
+                    viewModel.resetTeamNames()
                 }
             )
         }
@@ -193,7 +205,7 @@ struct ContentView: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: 16) {
                 TeamScoreCard(
-                    title: "Heim",
+                    title: viewModel.homeTeamName,
                     displayScore: viewModel.homeDisplayScore,
                     actualScore: viewModel.homeScore
                 )
@@ -204,7 +216,7 @@ struct ContentView: View {
                     .frame(width: 44)
 
                 TeamScoreCard(
-                    title: "Gast",
+                    title: viewModel.awayTeamName,
                     displayScore: viewModel.awayDisplayScore,
                     actualScore: viewModel.awayScore
                 )
@@ -212,7 +224,7 @@ struct ContentView: View {
 
             VStack(spacing: 12) {
                 TeamScoreCard(
-                    title: "Heim",
+                    title: viewModel.homeTeamName,
                     displayScore: viewModel.homeDisplayScore,
                     actualScore: viewModel.homeScore
                 )
@@ -222,7 +234,7 @@ struct ContentView: View {
                     .foregroundStyle(Color(red: 0.52, green: 0.66, blue: 1.0))
 
                 TeamScoreCard(
-                    title: "Gast",
+                    title: viewModel.awayTeamName,
                     displayScore: viewModel.awayDisplayScore,
                     actualScore: viewModel.awayScore
                 )
@@ -242,7 +254,8 @@ struct ContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(Array(viewModel.pairedGoals.enumerated()), id: \.offset) { _, row in
+                        ForEach(viewModel.pairedGoals.indices, id: \.self) { index in
+                            let row = viewModel.pairedGoals[index]
                             HStack(spacing: 10) {
                                 GoalCell(goal: row.home)
                                 GoalCell(goal: row.away)
@@ -276,7 +289,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(PrimaryActionButtonStyle(color: Color.red))
 
-                Button("Spielstand bearbeiten") {
+                Button("Bearbeiten") {
                     isEditScoreSheetOpen = true
                 }
                 .buttonStyle(SecondaryActionButtonStyle())
@@ -301,7 +314,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.red))
 
-                    Button("Spielstand bearbeiten") {
+                    Button("Bearbeiten") {
                         isEditScoreSheetOpen = true
                     }
                     .buttonStyle(SecondaryActionButtonStyle())
@@ -342,6 +355,9 @@ private struct TeamScoreCard: View {
             Text(title)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .allowsTightening(true)
 
             Text("Spielstand")
                 .font(.caption)
@@ -395,6 +411,8 @@ private struct GoalCell: View {
 }
 
 private struct GoalEntrySheet: View {
+    let homeTeamName: String
+    let awayTeamName: String
     let onAddGoal: (_ playerNumber: String, _ team: Team) -> String?
 
     @Environment(\.dismiss) private var dismiss
@@ -426,26 +444,42 @@ private struct GoalEntrySheet: View {
                         .onChange(of: playerNumber) { _, newValue in
                             playerNumber = String(newValue.filter { $0.isNumber }.prefix(2))
                         }
+
+                    HStack {
+                        Button("OK") {
+                            isPlayerNumberFocused = false
+                        }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(Color(red: 0.1, green: 0.15, blue: 0.25))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        Spacer(minLength: 0)
+                    }
                 }
 
                 HStack(spacing: 12) {
-                    Button("Tor Heim") {
+                    Button("Tor \(homeTeamName)") {
                         addGoal(team: .home)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.blue))
                     .disabled(!canSubmitGoal)
 
-                    Button("Tor Gast") {
+                    Button("Tor \(awayTeamName)") {
                         addGoal(team: .away)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.cyan))
                     .disabled(!canSubmitGoal)
                 }
 
-                Button("Abbrechen") {
-                    dismiss()
+                HStack(spacing: 12) {
+                    Button("Abbrechen") {
+                        dismiss()
+                    }
+                    .buttonStyle(SecondaryActionButtonStyle())
                 }
-                .buttonStyle(SecondaryActionButtonStyle())
 
                 Spacer()
             }
@@ -453,7 +487,7 @@ private struct GoalEntrySheet: View {
             .navigationTitle("Tor erfassen")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                DispatchQueue.main.async {
                     isPlayerNumberFocused = true
                 }
             }
@@ -483,24 +517,43 @@ private struct GoalEntrySheet: View {
 
 private struct EditScoreSheet: View {
     let goals: [GoalEntry]
+    let homeTeamName: String
+    let awayTeamName: String
+    let teamName: (Team) -> String
     let deleteConfirmationText: (GoalEntry) -> String
     let onDelete: (GoalEntry) -> Void
+    let onRenameTeam: (_ team: Team, _ name: String) -> String?
+    let onResetTeamNames: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var pendingDeleteGoal: GoalEntry?
+    @State private var renameTargetTeam: Team?
+    @State private var pendingTeamName = ""
+    @State private var renameErrorMessage: String?
+
+    private var renameAlertTitle: String {
+        switch renameTargetTeam {
+        case .home:
+            return "Heim umbenennen"
+        case .away:
+            return "Gast umbenennen"
+        case nil:
+            return "Team umbenennen"
+        }
+    }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
                 if goals.isEmpty {
                     Text("noch keine Tore vorhanden")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 220)
                         .foregroundStyle(.secondary)
                 } else {
                     List(goals) { goal in
                         HStack {
-                            Text("\(goal.team.label) · Spieler \(goal.player.paddedPlayerNumber) · \(goal.time)")
+                            Text("\(teamName(goal.team)) · Spieler \(goal.player.paddedPlayerNumber) · \(goal.time)")
                                 .font(.body)
                             Spacer()
                             Button {
@@ -514,7 +567,20 @@ private struct EditScoreSheet: View {
                         }
                     }
                     .listStyle(.plain)
+                    .frame(minHeight: 220)
                 }
+
+                HStack(spacing: 12) {
+                    renameTeamCard(title: "Heim", currentName: homeTeamName, team: .home)
+                    renameTeamCard(title: "Gast", currentName: awayTeamName, team: .away)
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
+
+                Button("Teamnamen zurücksetzen") {
+                    onResetTeamNames()
+                }
+                .buttonStyle(SecondaryActionButtonStyle())
 
                 Button("OK") {
                     dismiss()
@@ -547,8 +613,85 @@ private struct EditScoreSheet: View {
                     pendingDeleteGoal = nil
                 }
             }
+            .alert(renameAlertTitle, isPresented: Binding(
+                get: { renameTargetTeam != nil },
+                set: { shouldShow in
+                    if !shouldShow {
+                        cancelTeamRename()
+                    }
+                }
+            )) {
+                TextField("Vereinsname", text: $pendingTeamName)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled(true)
+
+                Button("Umbenennen") {
+                    applyTeamRename()
+                }
+
+                Button("Abbrechen", role: .cancel) {
+                    cancelTeamRename()
+                }
+            } message: {
+                Text("Bitte den neuen Vereinsnamen eingeben.")
+            }
+            .alert("Hinweis", isPresented: Binding(
+                get: { renameErrorMessage != nil },
+                set: { _ in renameErrorMessage = nil }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(renameErrorMessage ?? "")
+            }
         }
         .presentationDetents([.large])
+    }
+
+    @ViewBuilder
+    private func renameTeamCard(title: String, currentName: String, team: Team) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            Text(currentName)
+                .font(.subheadline)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Button("Umbenennen") {
+                renameTargetTeam = team
+                pendingTeamName = currentName
+            }
+            .buttonStyle(SecondaryActionButtonStyle())
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private func applyTeamRename() {
+        guard let renameTargetTeam else {
+            return
+        }
+
+        if let message = onRenameTeam(renameTargetTeam, pendingTeamName) {
+            renameErrorMessage = message
+            return
+        }
+
+        cancelTeamRename()
+    }
+
+    private func cancelTeamRename() {
+        renameTargetTeam = nil
+        pendingTeamName = ""
     }
 }
 
