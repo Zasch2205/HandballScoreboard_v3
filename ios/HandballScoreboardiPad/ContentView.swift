@@ -39,20 +39,32 @@ struct ContentView: View {
         .sheet(isPresented: $isGoalSheetOpen) {
             GoalEntrySheet(
                 homeTeamName: viewModel.homeTeamName,
-                awayTeamName: viewModel.awayTeamName
-            ) { playerNumber, team in
-                viewModel.addGoal(playerNumber: playerNumber, team: team)
-            }
+                awayTeamName: viewModel.awayTeamName,
+                onAddGoal: { playerNumber, team in
+                    viewModel.addGoal(playerNumber: playerNumber, team: team)
+                },
+                onAddYellowCard: { playerNumber, team in
+                    viewModel.addYellowCard(playerNumber: playerNumber, team: team)
+                },
+                onAddTwoMinutePenalty: { playerNumber, team in
+                    viewModel.addTwoMinutePenalty(playerNumber: playerNumber, team: team)
+                }
+            )
         }
         .sheet(isPresented: $isEditScoreSheetOpen) {
             EditScoreSheet(
                 goals: viewModel.goals,
+                disciplineEntries: viewModel.disciplineEntries,
                 homeTeamName: viewModel.homeTeamName,
                 awayTeamName: viewModel.awayTeamName,
                 teamName: viewModel.teamName(for:),
-                deleteConfirmationText: viewModel.goalDeleteConfirmationText(_:),
-                onDelete: { goal in
+                deleteGoalConfirmationText: viewModel.goalDeleteConfirmationText(_:),
+                deleteDisciplineConfirmationText: viewModel.disciplineDeleteConfirmationText(_:),
+                onDeleteGoal: { goal in
                     viewModel.deleteGoal(goalID: goal.id)
+                },
+                onDeleteDiscipline: { entry in
+                    viewModel.deleteDisciplineEntry(entryID: entry.id)
                 },
                 onRenameTeam: { team, name in
                     viewModel.renameTeam(team, to: name)
@@ -186,19 +198,36 @@ struct ContentView: View {
     }
 
     private var clockChip: some View {
-        Text(viewModel.clock)
-            .font(.system(size: 32, weight: .bold, design: .monospaced))
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
-            )
-            .foregroundStyle(Color(red: 0.55, green: 0.91, blue: 1.0))
-            .fixedSize(horizontal: true, vertical: false)
-            .layoutPriority(1)
+        VStack(alignment: .trailing, spacing: 6) {
+            Text(viewModel.clock)
+                .font(.system(size: 42, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color(red: 0.55, green: 0.91, blue: 1.0))
+
+            if let activePenalty = viewModel.activeTwoMinutePenalties.first {
+                Text("2 Min \(viewModel.teamName(for: activePenalty.team)) #\(activePenalty.player.paddedPlayerNumber): \(activePenalty.remainingClock)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.orange.opacity(0.95))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if viewModel.activeTwoMinutePenalties.count > 1 {
+                    Text("+\(viewModel.activeTwoMinutePenalties.count - 1) weitere")
+                        .font(.caption2)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.cyan.opacity(0.5), lineWidth: 1)
+        )
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
     }
 
     private var scoreSection: some View {
@@ -244,8 +273,8 @@ struct ContentView: View {
 
     private var goalLogSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if viewModel.goals.isEmpty {
-                Text("noch keine Tore gefallen")
+            if viewModel.matchLogEntries.isEmpty {
+                Text("noch keine Ereignisse")
                     .font(.headline)
                     .foregroundStyle(Color.white.opacity(0.75))
                     .frame(maxWidth: .infinity, minHeight: 240)
@@ -254,12 +283,11 @@ struct ContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(viewModel.pairedGoals.indices, id: \.self) { index in
-                            let row = viewModel.pairedGoals[index]
-                            HStack(spacing: 10) {
-                                GoalCell(goal: row.home)
-                                GoalCell(goal: row.away)
-                            }
+                        ForEach(viewModel.matchLogEntries) { event in
+                            MatchLogRow(
+                                event: event,
+                                teamName: viewModel.teamName(for:)
+                            )
                         }
                     }
                     .padding(14)
@@ -389,22 +417,83 @@ private struct TeamScoreCard: View {
     }
 }
 
-private struct GoalCell: View {
-    let goal: GoalEntry?
+private struct MatchLogRow: View {
+    let event: ScoreboardViewModel.MatchLogEntry
+    let teamName: (Team) -> String
+
+    private var isHomeEvent: Bool {
+        event.team == .home
+    }
+
+    private var accentColor: Color {
+        switch event.kind {
+        case .goal:
+            return Color(red: 0.22, green: 0.7, blue: 1.0)
+        case .yellowCard:
+            return Color.yellow.opacity(0.95)
+        case .twoMinutes:
+            return Color.orange.opacity(0.95)
+        }
+    }
+
+    private var iconName: String {
+        switch event.kind {
+        case .goal:
+            return "soccerball"
+        case .yellowCard:
+            return "rectangle.portrait.fill"
+        case .twoMinutes:
+            return "timer"
+        }
+    }
+
+    private var headline: String {
+        switch event.kind {
+        case .goal:
+            return "Spieler \(event.player.paddedPlayerNumber) hat ein Tor erzielt"
+        case .yellowCard:
+            return "Spieler \(event.player.paddedPlayerNumber) hat eine gelbe Karte bekommen"
+        case .twoMinutes:
+            return "Spieler \(event.player.paddedPlayerNumber) hat eine 2-Minuten-Strafe bekommen"
+        }
+    }
+
+    private var eventIcon: some View {
+        Image(systemName: iconName)
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(accentColor)
+            .frame(width: 20, height: 20)
+    }
+
+    private var eventText: some View {
+        VStack(alignment: isHomeEvent ? .leading : .trailing, spacing: 4) {
+            Text(headline)
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(isHomeEvent ? .leading : .trailing)
+
+            Text("\(teamName(event.team)) · \(event.minute) · \(event.time)")
+                .font(.caption)
+                .foregroundStyle(Color.white.opacity(0.72))
+                .multilineTextAlignment(isHomeEvent ? .leading : .trailing)
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading) {
-            if let goal {
-                Text("Spieler \(goal.player.paddedPlayerNumber) trifft in \(goal.time)")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.white)
+        HStack(alignment: .top, spacing: 12) {
+            if isHomeEvent {
+                eventIcon
+                eventText
+                Spacer(minLength: 0)
             } else {
-                Text(" ")
+                Spacer(minLength: 0)
+                eventText
+                eventIcon
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .frame(maxWidth: .infinity)
+        .padding(12)
         .background(Color.white.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -414,18 +503,21 @@ private struct GoalEntrySheet: View {
     let homeTeamName: String
     let awayTeamName: String
     let onAddGoal: (_ playerNumber: String, _ team: Team) -> String?
+    let onAddYellowCard: (_ playerNumber: String, _ team: Team) -> String?
+    let onAddTwoMinutePenalty: (_ playerNumber: String, _ team: Team) -> String?
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var playerNumber = ""
     @State private var errorMessage: String?
+    @State private var pendingDisciplineType: DisciplineType?
     @FocusState private var isPlayerNumberFocused: Bool
 
     private var sanitizedPlayerNumber: String {
         String(playerNumber.filter { $0.isNumber }.prefix(2))
     }
 
-    private var canSubmitGoal: Bool {
+    private var canSubmitEntry: Bool {
         !sanitizedPlayerNumber.isEmpty
     }
 
@@ -465,13 +557,27 @@ private struct GoalEntrySheet: View {
                         addGoal(team: .home)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.blue))
-                    .disabled(!canSubmitGoal)
+                    .disabled(!canSubmitEntry)
 
                     Button("Tor \(awayTeamName)") {
                         addGoal(team: .away)
                     }
                     .buttonStyle(PrimaryActionButtonStyle(color: Color.cyan))
-                    .disabled(!canSubmitGoal)
+                    .disabled(!canSubmitEntry)
+                }
+
+                HStack(spacing: 12) {
+                    Button("Gelbe Karte") {
+                        requestDiscipline(type: .yellowCard)
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle(color: Color.yellow.opacity(0.9)))
+                    .disabled(!canSubmitEntry)
+
+                    Button("2 Minuten") {
+                        requestDiscipline(type: .twoMinutes)
+                    }
+                    .buttonStyle(PrimaryActionButtonStyle(color: Color.orange))
+                    .disabled(!canSubmitEntry)
                 }
 
                 HStack(spacing: 12) {
@@ -499,6 +605,28 @@ private struct GoalEntrySheet: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+            .confirmationDialog(
+                "Für welches Team?",
+                isPresented: Binding(
+                    get: { pendingDisciplineType != nil },
+                    set: { shouldShow in
+                        if !shouldShow {
+                            pendingDisciplineType = nil
+                        }
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(homeTeamName) {
+                    submitDiscipline(team: .home)
+                }
+                Button(awayTeamName) {
+                    submitDiscipline(team: .away)
+                }
+                Button("Abbrechen", role: .cancel) {
+                    pendingDisciplineType = nil
+                }
+            }
         }
         .presentationDetents([.medium])
     }
@@ -513,24 +641,81 @@ private struct GoalEntrySheet: View {
 
         dismiss()
     }
+
+    private func requestDiscipline(type: DisciplineType) {
+        playerNumber = sanitizedPlayerNumber
+        isPlayerNumberFocused = false
+        pendingDisciplineType = type
+    }
+
+    private func submitDiscipline(team: Team) {
+        guard let pendingDisciplineType else {
+            return
+        }
+
+        playerNumber = sanitizedPlayerNumber
+
+        let message: String?
+
+        switch pendingDisciplineType {
+        case .yellowCard:
+            message = onAddYellowCard(playerNumber, team)
+        case .twoMinutes:
+            message = onAddTwoMinutePenalty(playerNumber, team)
+        }
+
+        self.pendingDisciplineType = nil
+
+        if let message {
+            errorMessage = message
+            return
+        }
+
+        dismiss()
+    }
 }
 
 private struct EditScoreSheet: View {
     let goals: [GoalEntry]
+    let disciplineEntries: [DisciplineEntry]
     let homeTeamName: String
     let awayTeamName: String
     let teamName: (Team) -> String
-    let deleteConfirmationText: (GoalEntry) -> String
-    let onDelete: (GoalEntry) -> Void
+    let deleteGoalConfirmationText: (GoalEntry) -> String
+    let deleteDisciplineConfirmationText: (DisciplineEntry) -> String
+    let onDeleteGoal: (GoalEntry) -> Void
+    let onDeleteDiscipline: (DisciplineEntry) -> Void
     let onRenameTeam: (_ team: Team, _ name: String) -> String?
     let onResetTeamNames: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var pendingDeleteGoal: GoalEntry?
+    @State private var pendingDeleteItem: PendingDeleteItem?
     @State private var renameTargetTeam: Team?
     @State private var pendingTeamName = ""
     @State private var renameErrorMessage: String?
+
+    private enum PendingDeleteItem {
+        case goal(GoalEntry)
+        case discipline(DisciplineEntry)
+    }
+
+    private var hasAnyEntries: Bool {
+        !goals.isEmpty || !disciplineEntries.isEmpty
+    }
+
+    private var pendingDeleteText: String {
+        guard let pendingDeleteItem else {
+            return ""
+        }
+
+        switch pendingDeleteItem {
+        case .goal(let goal):
+            return deleteGoalConfirmationText(goal)
+        case .discipline(let entry):
+            return deleteDisciplineConfirmationText(entry)
+        }
+    }
 
     private var renameAlertTitle: String {
         switch renameTargetTeam {
@@ -546,27 +731,53 @@ private struct EditScoreSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                if goals.isEmpty {
-                    Text("noch keine Tore vorhanden")
+                if !hasAnyEntries {
+                    Text("noch keine Einträge vorhanden")
                         .frame(maxWidth: .infinity, minHeight: 220)
                         .foregroundStyle(.secondary)
                 } else {
-                    List(goals) { goal in
-                        HStack {
-                            Text("\(teamName(goal.team)) · Spieler \(goal.player.paddedPlayerNumber) · \(goal.time)")
-                                .font(.body)
-                            Spacer()
-                            Button {
-                                pendingDeleteGoal = goal
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.title3)
+                    List {
+                        if !goals.isEmpty {
+                            Section("Tore") {
+                                ForEach(goals) { goal in
+                                    HStack {
+                                        Text("\(teamName(goal.team)) · Spieler \(goal.player.paddedPlayerNumber) · \(goal.time)")
+                                            .font(.body)
+                                        Spacer()
+                                        Button {
+                                            pendingDeleteItem = .goal(goal)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.title3)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .tint(.red)
+                                    }
+                                }
                             }
-                            .buttonStyle(.borderless)
-                            .tint(.red)
+                        }
+
+                        if !disciplineEntries.isEmpty {
+                            Section("Karten / Strafen") {
+                                ForEach(disciplineEntries) { entry in
+                                    HStack {
+                                        Text("\(teamName(entry.team)) · \(disciplineTypeLabel(entry.type)) · Spieler \(entry.player.paddedPlayerNumber) · \(entry.time)")
+                                            .font(.body)
+                                        Spacer()
+                                        Button {
+                                            pendingDeleteItem = .discipline(entry)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                                .font(.title3)
+                                        }
+                                        .buttonStyle(.borderless)
+                                        .tint(.red)
+                                    }
+                                }
+                            }
                         }
                     }
-                    .listStyle(.plain)
+                    .listStyle(.insetGrouped)
                     .frame(minHeight: 220)
                 }
 
@@ -592,25 +803,22 @@ private struct EditScoreSheet: View {
             .navigationTitle("Spielstand bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
             .confirmationDialog(
-                pendingDeleteGoal.map(deleteConfirmationText) ?? "",
+                pendingDeleteText,
                 isPresented: Binding(
-                    get: { pendingDeleteGoal != nil },
+                    get: { pendingDeleteItem != nil },
                     set: { shouldShow in
                         if !shouldShow {
-                            pendingDeleteGoal = nil
+                            pendingDeleteItem = nil
                         }
                     }
                 ),
                 titleVisibility: .visible
             ) {
-                Button("Tor löschen", role: .destructive) {
-                    if let pendingDeleteGoal {
-                        onDelete(pendingDeleteGoal)
-                    }
-                    pendingDeleteGoal = nil
+                Button("Eintrag löschen", role: .destructive) {
+                    applyDelete()
                 }
                 Button("Abbrechen", role: .cancel) {
-                    pendingDeleteGoal = nil
+                    pendingDeleteItem = nil
                 }
             }
             .alert(renameAlertTitle, isPresented: Binding(
@@ -692,6 +900,30 @@ private struct EditScoreSheet: View {
     private func cancelTeamRename() {
         renameTargetTeam = nil
         pendingTeamName = ""
+    }
+
+    private func disciplineTypeLabel(_ type: DisciplineType) -> String {
+        switch type {
+        case .yellowCard:
+            return "Gelbe Karte"
+        case .twoMinutes:
+            return "2 Minuten"
+        }
+    }
+
+    private func applyDelete() {
+        guard let pendingDeleteItem else {
+            return
+        }
+
+        switch pendingDeleteItem {
+        case .goal(let goal):
+            onDeleteGoal(goal)
+        case .discipline(let entry):
+            onDeleteDiscipline(entry)
+        }
+
+        self.pendingDeleteItem = nil
     }
 }
 
