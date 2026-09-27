@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// Hauptansicht der iPad-App.
+///
+/// Verantwortlich für:
+/// - Darstellung von Uhr, Spielstand und Ereignis-Log
+/// - Öffnen der Eingabe-/Bearbeitungsdialoge
+/// - Weitergabe aller Nutzeraktionen an das `ScoreboardViewModel`
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = ScoreboardViewModel()
@@ -9,6 +15,10 @@ struct ContentView: View {
     @State private var showResetMatchConfirmation = false
     @State private var showRestorePrompt = false
 
+    // MARK: - Layout Root
+
+    // `GeometryReader` erlaubt uns, Safe-Area-Abstände dynamisch zu berücksichtigen.
+    // Dadurch bleibt das Layout auf allen iPad-Größen stabil.
     var body: some View {
         GeometryReader { proxy in
             let insets = proxy.safeAreaInsets
@@ -109,6 +119,9 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Main Sections
+
+    // Hintergrund im "Glas/Licht"-Look: Bild + dunkle Overlays + zwei weiche Lichtkreise.
     private var backgroundLayer: some View {
         ZStack {
             Image("BackgroundPhoto")
@@ -166,6 +179,8 @@ struct ContentView: View {
         }
     }
 
+    // Kopfzeile mit Titel und Uhr. `ViewThatFits` wechselt automatisch in ein
+    // vertikales Layout, falls horizontal nicht genug Platz vorhanden ist.
     private var topBar: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
@@ -197,6 +212,8 @@ struct ContentView: View {
         }
     }
 
+    // Uhr-Container oben rechts.
+    // Zeigt immer die Hauptspielzeit und optional die aktuell laufende 2-Minuten-Strafe.
     private var clockChip: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Text(viewModel.clock)
@@ -230,6 +247,8 @@ struct ContentView: View {
         .layoutPriority(1)
     }
 
+    // Die beiden Team-Karten mit aktuellem Stand.
+    // Auch hier sorgt `ViewThatFits` für einen sauberen Fallback bei weniger Platz.
     private var scoreSection: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: 16) {
@@ -271,6 +290,8 @@ struct ContentView: View {
         }
     }
 
+    // Zentrales Ereignisfeld unter dem Spielstand:
+    // Tore, gelbe Karten und 2-Minuten-Strafen in einer gemeinsamen Timeline.
     private var goalLogSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if viewModel.matchLogEntries.isEmpty {
@@ -299,6 +320,7 @@ struct ContentView: View {
         }
     }
 
+    // Primäre Steuerung für Uhr/Reset/Bearbeitung.
     private var controlsSection: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
@@ -351,6 +373,7 @@ struct ContentView: View {
         }
     }
 
+    // Floating Action Button zum schnellen Öffnen der Eingabemaske.
     private var quickGoalButton: some View {
         Button {
             isGoalSheetOpen = true
@@ -373,10 +396,15 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Reusable Subviews
+
+// Kompakte Anzeige einer Mannschaft im oberen Spielstand.
 private struct TeamScoreCard: View {
     let title: String
     let displayScore: Int
     let actualScore: Int
+
+    // MARK: - UI
 
     var body: some View {
         VStack(spacing: 8) {
@@ -417,9 +445,13 @@ private struct TeamScoreCard: View {
     }
 }
 
+// Einzelne Zeile im mittleren Ereignis-Log.
+// Heim-Ereignisse werden links, Gast-Ereignisse rechts angeordnet.
 private struct MatchLogRow: View {
     let event: ScoreboardViewModel.MatchLogEntry
     let teamName: (Team) -> String
+
+    // MARK: - Derived State
 
     private var isHomeEvent: Bool {
         event.team == .home
@@ -458,6 +490,8 @@ private struct MatchLogRow: View {
         }
     }
 
+    // MARK: - Helper Views
+
     private var eventIcon: some View {
         Image(systemName: iconName)
             .font(.system(size: 15, weight: .bold))
@@ -480,6 +514,8 @@ private struct MatchLogRow: View {
         }
     }
 
+    // MARK: - UI
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if isHomeEvent {
@@ -499,6 +535,7 @@ private struct MatchLogRow: View {
     }
 }
 
+// Eingabedialog für Tore, gelbe Karten und 2-Minuten-Strafen.
 private struct GoalEntrySheet: View {
     let homeTeamName: String
     let awayTeamName: String
@@ -513,13 +550,18 @@ private struct GoalEntrySheet: View {
     @State private var pendingDisciplineType: DisciplineType?
     @FocusState private var isPlayerNumberFocused: Bool
 
+    // MARK: - Derived State
+
     private var sanitizedPlayerNumber: String {
+        // Nur Ziffern zulassen und auf zwei Zeichen begrenzen.
         String(playerNumber.filter { $0.isNumber }.prefix(2))
     }
 
     private var canSubmitEntry: Bool {
         !sanitizedPlayerNumber.isEmpty
     }
+
+    // MARK: - UI
 
     var body: some View {
         NavigationStack {
@@ -631,7 +673,11 @@ private struct GoalEntrySheet: View {
         .presentationDetents([.medium])
     }
 
+    // MARK: - Actions
+
     private func addGoal(team: Team) {
+        // Vor dem Absenden nochmals die sanitierte Nummer verwenden,
+        // damit auch bei manuell eingefügten Zeichen nur gültige Daten ankommen.
         playerNumber = sanitizedPlayerNumber
 
         if let message = onAddGoal(playerNumber, team) {
@@ -643,6 +689,7 @@ private struct GoalEntrySheet: View {
     }
 
     private func requestDiscipline(type: DisciplineType) {
+        // Zuerst Nummer fixieren, dann Teamauswahl-Dialog öffnen.
         playerNumber = sanitizedPlayerNumber
         isPlayerNumberFocused = false
         pendingDisciplineType = type
@@ -657,6 +704,7 @@ private struct GoalEntrySheet: View {
 
         let message: String?
 
+        // Je nach gewählter Disziplin den passenden ViewModel-Aufruf verwenden.
         switch pendingDisciplineType {
         case .yellowCard:
             message = onAddYellowCard(playerNumber, team)
@@ -675,6 +723,8 @@ private struct GoalEntrySheet: View {
     }
 }
 
+// Dialog zum nachträglichen Bearbeiten:
+// Einträge löschen, Teamnamen ändern, Teamnamen zurücksetzen.
 private struct EditScoreSheet: View {
     let goals: [GoalEntry]
     let disciplineEntries: [DisciplineEntry]
@@ -700,11 +750,14 @@ private struct EditScoreSheet: View {
         case discipline(DisciplineEntry)
     }
 
+    // MARK: - Derived State
+
     private var hasAnyEntries: Bool {
         !goals.isEmpty || !disciplineEntries.isEmpty
     }
 
     private var pendingDeleteText: String {
+        // Einheitliche Löschabfrage unabhängig vom Eintragstyp.
         guard let pendingDeleteItem else {
             return ""
         }
@@ -727,6 +780,8 @@ private struct EditScoreSheet: View {
             return "Team umbenennen"
         }
     }
+
+    // MARK: - UI
 
     var body: some View {
         NavigationStack {
@@ -855,6 +910,43 @@ private struct EditScoreSheet: View {
         .presentationDetents([.large])
     }
 
+    // MARK: - Actions
+
+    private func applyTeamRename() {
+        guard let renameTargetTeam else {
+            return
+        }
+
+        if let message = onRenameTeam(renameTargetTeam, pendingTeamName) {
+            renameErrorMessage = message
+            return
+        }
+
+        cancelTeamRename()
+    }
+
+    private func cancelTeamRename() {
+        renameTargetTeam = nil
+        pendingTeamName = ""
+    }
+
+    private func applyDelete() {
+        guard let pendingDeleteItem else {
+            return
+        }
+
+        switch pendingDeleteItem {
+        case .goal(let goal):
+            onDeleteGoal(goal)
+        case .discipline(let entry):
+            onDeleteDiscipline(entry)
+        }
+
+        self.pendingDeleteItem = nil
+    }
+
+    // MARK: - Helper Views
+
     @ViewBuilder
     private func renameTeamCard(title: String, currentName: String, team: Team) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -884,24 +976,6 @@ private struct EditScoreSheet: View {
         )
     }
 
-    private func applyTeamRename() {
-        guard let renameTargetTeam else {
-            return
-        }
-
-        if let message = onRenameTeam(renameTargetTeam, pendingTeamName) {
-            renameErrorMessage = message
-            return
-        }
-
-        cancelTeamRename()
-    }
-
-    private func cancelTeamRename() {
-        renameTargetTeam = nil
-        pendingTeamName = ""
-    }
-
     private func disciplineTypeLabel(_ type: DisciplineType) -> String {
         switch type {
         case .yellowCard:
@@ -910,23 +984,11 @@ private struct EditScoreSheet: View {
             return "2 Minuten"
         }
     }
-
-    private func applyDelete() {
-        guard let pendingDeleteItem else {
-            return
-        }
-
-        switch pendingDeleteItem {
-        case .goal(let goal):
-            onDeleteGoal(goal)
-        case .discipline(let entry):
-            onDeleteDiscipline(entry)
-        }
-
-        self.pendingDeleteItem = nil
-    }
 }
 
+// MARK: - Button Styles
+
+// Primärer, farbiger Aktionsbutton (Start, Reset etc.).
 private struct PrimaryActionButtonStyle: ButtonStyle {
     let color: Color
 
@@ -944,6 +1006,7 @@ private struct PrimaryActionButtonStyle: ButtonStyle {
     }
 }
 
+// Sekundärer Button-Stil für neutrale Aktionen.
 private struct SecondaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -963,11 +1026,16 @@ private struct SecondaryActionButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Utilities
+
 private extension String {
+    // Vereinheitlichte Darstellung der Rückennummer als 2-stellige Anzeige.
     var paddedPlayerNumber: String {
         count == 1 ? "0\(self)" : self
     }
 }
+
+// MARK: - Preview
 
 #Preview {
     ContentView()

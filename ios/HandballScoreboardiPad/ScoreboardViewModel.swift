@@ -1,6 +1,7 @@
 import Combine
 @preconcurrency import Foundation
 
+// Definiert die beiden möglichen Mannschaftsseiten.
 enum Team: String, CaseIterable, Codable {
     case home
     case away
@@ -15,6 +16,7 @@ enum Team: String, CaseIterable, Codable {
     }
 }
 
+// Einzelnes Tor-Ereignis für Timeline, Anzeige und Persistenz.
 struct GoalEntry: Identifiable, Equatable, Codable {
     let id: UUID
     let team: Team
@@ -31,11 +33,14 @@ struct GoalEntry: Identifiable, Equatable, Codable {
     }
 }
 
+// Typ einer disziplinarischen Aktion.
 enum DisciplineType: String, Codable, CaseIterable {
     case yellowCard
     case twoMinutes
 }
 
+// Einzelnes Karten-/Strafen-Ereignis.
+// Bei 2 Minuten speichern wir zusätzlich die Startsekunde für den Countdown.
 struct DisciplineEntry: Identifiable, Equatable, Codable {
     let id: UUID
     let team: Team
@@ -64,6 +69,7 @@ struct DisciplineEntry: Identifiable, Equatable, Codable {
     }
 }
 
+// Validierungsfehler rund um Rückennummern.
 enum GoalValidationError: LocalizedError {
     case missingPlayerNumber
     case invalidPlayerNumber
@@ -78,6 +84,7 @@ enum GoalValidationError: LocalizedError {
     }
 }
 
+// Validierungsfehler beim Umbenennen von Mannschaften.
 enum TeamRenameValidationError: LocalizedError {
     case invalidTeamName
 
@@ -90,7 +97,15 @@ enum TeamRenameValidationError: LocalizedError {
 }
 
 @MainActor
+/// Zentrale Zustands- und Logikschicht für das Scoreboard.
+///
+/// Das ViewModel kapselt:
+/// - Spielzustand (Tore, Karten, Uhr, Teamnamen)
+/// - abgeleitete Darstellungen für die UI
+/// - Persistenz und Wiederherstellung
 final class ScoreboardViewModel: ObservableObject {
+    // MARK: - Published State
+
     @Published var goals: [GoalEntry] = [] {
         didSet {
             recalculateDerivedState()
@@ -107,8 +122,12 @@ final class ScoreboardViewModel: ObservableObject {
     @Published private(set) var awayTeamName = Team.away.label
     @Published private(set) var shouldShowRestorePrompt = false
 
+    // MARK: - Supporting Types
+
+    // Historischer Typ für die frühere zweispaltige Tor-Ansicht.
     typealias GoalPair = (home: GoalEntry?, away: GoalEntry?)
 
+    // Laufende 2-Minuten-Strafe inkl. verbleibender Zeit.
     struct ActiveTwoMinutePenalty: Identifiable, Equatable {
         let id: UUID
         let team: Team
@@ -123,6 +142,7 @@ final class ScoreboardViewModel: ObservableObject {
         }
     }
 
+    // Einheitliches Ereignismodell für das zentrale Match-Log (UI-Timeline).
     struct MatchLogEntry: Identifiable, Equatable {
         enum Kind: Equatable {
             case goal
@@ -138,6 +158,8 @@ final class ScoreboardViewModel: ObservableObject {
         let kind: Kind
     }
 
+    // Persistiertes Datenformat in UserDefaults.
+    // `decodeIfPresent` sorgt für Abwärtskompatibilität bei älteren Speicherständen.
     private struct PersistedState: Codable {
         let goals: [GoalEntry]
         let disciplineEntries: [DisciplineEntry]
@@ -182,6 +204,8 @@ final class ScoreboardViewModel: ObservableObject {
         }
     }
 
+    // Vorgecachter Zustand für UI-Anzeigen, die aus Rohdaten berechnet werden.
+    // So müssen wir nicht bei jedem Render teuer neu rechnen.
     private struct DerivedState {
         let homeScore: Int
         let awayScore: Int
@@ -208,6 +232,9 @@ final class ScoreboardViewModel: ObservableObject {
         )
     }
 
+    // MARK: - Configuration
+
+    // Schutzgrenzen für Speichergröße, Eingaben und Zeitbereiche.
     private static let persistedStateKey = "handballscoreboard.ipad.state.v1"
     private static let maxStoredGoals = 500
     private static let maxStoredDisciplineEntries = 500
@@ -222,11 +249,15 @@ final class ScoreboardViewModel: ObservableObject {
     private var timerCancellable: AnyCancellable?
     private var derivedState = DerivedState.empty
 
+    // MARK: - Initialization
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         restoreState()
         recalculateDerivedState()
 
+        // 1s-Timer für die Spieluhr.
+        // Persistenz nur periodisch, um Schreiblast niedrig zu halten.
         timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
@@ -247,6 +278,8 @@ final class ScoreboardViewModel: ObservableObject {
                 }
             }
     }
+
+    // MARK: - Derived Public State
 
     var clock: String {
         Self.formatClock(elapsedSeconds)
@@ -292,6 +325,8 @@ final class ScoreboardViewModel: ObservableObject {
         derivedState.awayTwoMinutePenalties
     }
 
+    // Liefert nur aktive (noch nicht abgelaufene) 2-Minuten-Strafen.
+    // Sortierung: zuerst die Strafe, die als Nächstes endet.
     var activeTwoMinutePenalties: [ActiveTwoMinutePenalty] {
         disciplineEntries
             .compactMap { entry -> ActiveTwoMinutePenalty? in
@@ -318,6 +353,8 @@ final class ScoreboardViewModel: ObservableObject {
             }
     }
 
+    // MARK: - Public Actions
+
     func teamName(for team: Team) -> String {
         switch team {
         case .home:
@@ -327,17 +364,20 @@ final class ScoreboardViewModel: ObservableObject {
         }
     }
 
+    // Spieluhr pausieren/fortsetzen.
     func toggleRunning() {
         isRunning.toggle()
         persistNow()
     }
 
+    // Nur Uhr zurücksetzen; Tore/Karten bleiben erhalten.
     func resetClock() {
         isRunning = false
         elapsedSeconds = 0
         persistNow()
     }
 
+    // Vollständiger Spiel-Reset.
     func resetMatch() {
         goals = []
         disciplineEntries = []
@@ -346,6 +386,7 @@ final class ScoreboardViewModel: ObservableObject {
         persistNow()
     }
 
+    // Neues Tor validieren, anlegen und vorne in die Liste einfügen.
     func addGoal(playerNumber: String, team: Team) -> String? {
         let trimmed = playerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -392,6 +433,7 @@ final class ScoreboardViewModel: ObservableObject {
         persistNow()
     }
 
+    // Teamnamen werden vor dem Speichern bereinigt.
     func renameTeam(_ team: Team, to newName: String) -> String? {
         guard let sanitizedName = Self.sanitizeTeamName(newName) else {
             return TeamRenameValidationError.invalidTeamName.localizedDescription
@@ -440,6 +482,7 @@ final class ScoreboardViewModel: ObservableObject {
         return "\(entryTypeLabel) von \(teamName(for: entry.team)) (Spieler \(entry.player.paddedPlayerNumber), \(entry.time)) wirklich löschen?"
     }
 
+    // Persistiert den aktuellen Zustand sofort.
     func persistNow() {
         saveState(
             goals: goals,
@@ -451,16 +494,21 @@ final class ScoreboardViewModel: ObservableObject {
         )
     }
 
+    // Restore-Dialog: bestehendes Spiel fortsetzen.
     func continueRecoveredSession() {
         shouldShowRestorePrompt = false
     }
 
+    // Restore-Dialog: gespeicherten Stand verwerfen und neu starten.
     func startNewSessionFromRestorePrompt() {
         resetMatch()
         shouldShowRestorePrompt = false
         persistNow()
     }
 
+    // MARK: - Internal State Updates
+
+    // Gemeinsame Logik für gelbe Karten und 2-Minuten-Strafen.
     private func addDiscipline(playerNumber: String, team: Team, type: DisciplineType) -> String? {
         let trimmed = playerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -491,6 +539,8 @@ final class ScoreboardViewModel: ObservableObject {
         return nil
     }
 
+    // Berechnet alle abgeleiteten Anzeigen (Scores, Zähler, Timeline) neu.
+    // Wird automatisch ausgelöst, sobald `goals` oder `disciplineEntries` geändert werden.
     private func recalculateDerivedState() {
         var homeGoals: [GoalEntry] = []
         homeGoals.reserveCapacity(goals.count)
@@ -559,6 +609,10 @@ final class ScoreboardViewModel: ObservableObject {
         )
     }
 
+    // MARK: - Persistence
+
+    // Lädt den gespeicherten Zustand, validiert ihn und entscheidet,
+    // ob ein Wiederherstellen-Dialog angezeigt werden soll.
     private func restoreState() {
         guard let data = userDefaults.data(forKey: Self.persistedStateKey) else {
             return
@@ -601,6 +655,7 @@ final class ScoreboardViewModel: ObservableObject {
         shouldShowRestorePrompt = true
     }
 
+    // Serialisiert den Zustand im Hintergrund und schreibt ihn atomar in UserDefaults.
     private func saveState(
         goals: [GoalEntry],
         disciplineEntries: [DisciplineEntry],
@@ -634,6 +689,9 @@ final class ScoreboardViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Sanitizing
+
+    // Defensives Filtern geladener Tore (z. B. nach App-Updates oder Datenkorruption).
     private func sanitizeGoals(_ rawGoals: [GoalEntry]) -> [GoalEntry] {
         var sanitizedGoals: [GoalEntry] = []
         sanitizedGoals.reserveCapacity(min(rawGoals.count, Self.maxStoredGoals))
@@ -657,6 +715,7 @@ final class ScoreboardViewModel: ObservableObject {
         return sanitizedGoals
     }
 
+    // Defensives Filtern geladener Karten-/Straf-Einträge.
     private func sanitizeDisciplineEntries(_ rawEntries: [DisciplineEntry]) -> [DisciplineEntry] {
         var sanitizedEntries: [DisciplineEntry] = []
         sanitizedEntries.reserveCapacity(min(rawEntries.count, Self.maxStoredDisciplineEntries))
@@ -713,6 +772,7 @@ final class ScoreboardViewModel: ObservableObject {
         min(max(0, seconds), maxElapsedSeconds)
     }
 
+    // Vereinheitlicht Teamnamen: Steuerzeichen raus, Whitespaces normalisieren, Länge begrenzen.
     private static func sanitizeTeamName(_ rawName: String) -> String? {
         let filteredScalars = rawName.unicodeScalars.filter { scalar in
             !CharacterSet.controlCharacters.contains(scalar) || scalar.value == 32
@@ -734,6 +794,10 @@ final class ScoreboardViewModel: ObservableObject {
         return limited
     }
 
+    // MARK: - Timeline Building
+
+    // Baut die kombinierte Timeline aus Toren + Disziplinarereignissen.
+    // Sortierung: neueste Spielzeit zuerst; bei gleicher Zeit stabile Reihenfolge über Quellindex.
     private static func buildMatchLogEntries(goals: [GoalEntry], disciplineEntries: [DisciplineEntry]) -> [MatchLogEntry] {
         struct SortableMatchLogEntry {
             let entry: MatchLogEntry
@@ -793,6 +857,7 @@ final class ScoreboardViewModel: ObservableObject {
             .map(\.entry)
     }
 
+    // Wandelt die Anzeige "MM:SS" in Sekunden um (für Sortierung/Logik).
     private static func parseClockToSeconds(_ clock: String) -> Int {
         let components = clock.split(separator: ":", omittingEmptySubsequences: false)
 
@@ -808,11 +873,15 @@ final class ScoreboardViewModel: ObservableObject {
         return (minutes * 60) + seconds
     }
 
+    // MARK: - Validation & Formatting
+
+    // Zulässig sind 1-2 Ziffern.
     private static func isValidPlayerNumber(_ number: String) -> Bool {
         let digitCount = number.count
         return (1...2).contains(digitCount) && number.allSatisfy(\.isNumber)
     }
 
+    // Erwartet Format MM:SS (min. 2 Stellen für Minuten, exakt 2 für Sekunden).
     private static func isValidClock(_ clock: String) -> Bool {
         let components = clock.split(separator: ":", omittingEmptySubsequences: false)
 
@@ -837,6 +906,7 @@ final class ScoreboardViewModel: ObservableObject {
         return true
     }
 
+    // Erwartet Minutenlabel wie "1'", "12'" usw.
     private static func isValidMinuteLabel(_ label: String) -> Bool {
         guard label.hasSuffix("'") else {
             return false
@@ -856,6 +926,7 @@ final class ScoreboardViewModel: ObservableObject {
         return true
     }
 
+    // Formatiert rohe Sekunden als Anzeigeuhr.
     private static func formatClock(_ totalSeconds: Int) -> String {
         let safeSeconds = clampElapsedSeconds(totalSeconds)
         let minutes = String(format: "%02d", safeSeconds / 60)
@@ -863,12 +934,16 @@ final class ScoreboardViewModel: ObservableObject {
         return "\(minutes):\(seconds)"
     }
 
+    // Im Handball beginnt die Minute bei 1' statt 0'.
     private static func minuteLabel(_ totalSeconds: Int) -> String {
         "\((clampElapsedSeconds(totalSeconds) / 60) + 1)'"
     }
 }
 
+// MARK: - Utilities
+
 private extension String {
+    // Für Anzeigezwecke aus "3" -> "03".
     var paddedPlayerNumber: String {
         count == 1 ? "0\(self)" : self
     }
